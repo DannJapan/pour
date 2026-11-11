@@ -193,6 +193,8 @@ input[type=range]{width:100%;accent-color:var(--ink)}
 .log .s .st{letter-spacing:1px}
 .log .n{color:var(--muted);font-style:italic;font-size:.88rem}
 .empty{color:var(--muted);font-size:.9rem;margin:12px 0 0}
+.log .ed{justify-self:end;margin-top:2px}
+.logedit{margin-top:10px}
 
 /* Buttons */
 button{font:500 .8rem var(--body);letter-spacing:.16em;text-transform:uppercase;border-radius:2px;border:1px solid var(--ink);background:transparent;color:var(--ink);padding:13px 14px;cursor:pointer}
@@ -330,11 +332,32 @@ button.danger{color:var(--warn);border-color:var(--warn)}
     </details>
   </section>
 
-  <section class="card">
+  <section class="card" id="logCard">
     <div class="row"><h2>Practice log</h2><button type="button" class="link" id="clearLog">Clear all</button></div>
     <div class="field" style="margin-top:10px"><label for="logFilter">Show</label><select id="logFilter"></select></div>
     <p class="logsum" id="logSum"></p>
     <ul class="log" id="log"></ul>
+    <form class="beanform logedit" id="logEdit" hidden novalidate>
+      <h3>Edit brew</h3>
+      <div class="field"><label for="leBean">Bean</label><select id="leBean"></select></div>
+      <div class="grid2">
+        <div class="field"><label for="leRecipe">Recipe</label><select id="leRecipe"><option value="Brewman">Brewman</option><option value="Decaf">Decaf</option><option value="Starter">Starter</option></select></div>
+        <div class="field"><label for="leGrind">C3S clicks</label><input type="text" id="leGrind" maxlength="12"></div>
+        <div class="field"><label for="leDose">Coffee (g)</label><input type="number" id="leDose" min="5" max="40" step="0.5" inputmode="decimal"></div>
+        <div class="field"><label for="leWater">Water (g)</label><input type="number" id="leWater" min="50" max="600" step="1" inputmode="numeric"></div>
+        <div class="field"><label for="leTemp">Water (°C)</label><input type="number" id="leTemp" min="80" max="100" step="1" inputmode="numeric"></div>
+        <div class="field"><label for="leTime">Brew time</label><input type="text" id="leTime" maxlength="5" placeholder="2:45"></div>
+        <div class="field"><label for="leTaste">Taste</label><select id="leTaste"><option value="">Not set</option><option>Sour</option><option>Balanced</option><option>Bitter</option></select></div>
+        <div class="field"><label for="leRating">Rating</label><select id="leRating"><option value="0">Not rated</option><option value="1">★</option><option value="2">★★</option><option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option></select></div>
+      </div>
+      <div class="field"><label for="leNotes">Tasting notes</label><textarea id="leNotes"></textarea></div>
+      <p class="err" id="leErr" role="alert"></p>
+      <div class="btnrow">
+        <button type="submit" class="primary small">Save changes</button>
+        <button type="button" class="small" id="leCancel">Cancel</button>
+        <button type="button" class="small danger" id="leDelete">Delete brew</button>
+      </div>
+    </form>
     <p class="empty" id="logEmpty">Finish a brew and it will appear here with your bean, grind, drawdown time and notes.</p>
     <div class="btnrow" id="clearConfirm" hidden style="margin-top:10px">
       <button type="button" class="small danger" id="clearYes">Delete every brew</button>
@@ -577,7 +600,7 @@ function renderLog(){
   if(log.some(e=>!e.beanId)) f.append(new Option('No bean','none'));
   f.value=[...f.options].some(o=>o.value===keep)?keep:'all';
   const fv=f.value, list=log.filter(e=>fv==='all'||(fv==='none'?!e.beanId:e.beanId===fv));
-  const ul=$('log'); ul.textContent='';
+  const ul=$('log'); let placed=false; $('logCard').append(LE.form); ul.textContent='';
   $('logEmpty').hidden=list.length>0;
   if(list.length){
     const avg=list.reduce((a,e)=>a+e.time,0)/list.length;
@@ -592,13 +615,72 @@ function renderLog(){
     li.append(el('div','m',[e.date,e.day!=null&&e.day>=0?'day '+e.day:null,e.grind?e.grind+' clicks':null,e.dose+' g → '+e.water+' g',e.temp+'°C'].filter(Boolean).join(' · ')));
     if(e.rating||e.taste){const s=el('div','s'); if(e.rating) s.append(el('span','st',stars(e.rating))); if(e.taste) s.append((e.rating?'  ':'')+e.taste); li.append(s);}
     if(e.notes) li.append(el('div','n',e.notes));
+    if(e.id===editLogId){ li.append(LE.form); placed=true; }
+    else { const ed=el('button','link ed','Edit'); ed.type='button'; ed.addEventListener('click',()=>openLogEdit(e.id)); li.append(ed); }
     ul.append(li);
   });
+  if(editLogId&&!placed){ editLogId=null; LE.form.hidden=true; }
 }
 $('logFilter').addEventListener('change',renderLog);
+
+/* ---------- edit a logged brew ---------- */
+const LE={form:$('logEdit'),bean:$('leBean'),recipe:$('leRecipe'),grind:$('leGrind'),dose:$('leDose'),water:$('leWater'),
+  temp:$('leTemp'),time:$('leTime'),taste:$('leTaste'),rating:$('leRating'),notes:$('leNotes'),err:$('leErr'),del:$('leDelete')};
+let editLogId=null, leDelArmed=false;
+function parseTime(v){
+  v=String(v).trim(); let m=v.match(/^(\d{1,2})[:.](\d{1,2})$/);
+  if(m&&+m[2]<60) return (+m[1])*60+(+m[2]);
+  return /^\d{1,4}$/.test(v)?+v:null;
+}
+function daysBetween(roast,ts){
+  if(!roast||!ts) return null; const r=new Date(roast+'T00:00:00'), d=new Date(ts); d.setHours(0,0,0,0);
+  return isNaN(r)?null:Math.round((d-r)/864e5);
+}
+function openLogEdit(id){
+  const e=log.find(x=>x.id===id); if(!e) return;
+  editLogId=id; leDelArmed=false; LE.del.textContent='Delete brew'; LE.err.textContent='';
+  LE.bean.textContent=''; LE.bean.append(new Option('No bean',''));
+  beans.forEach(b=>LE.bean.append(new Option(b.name+(b.roaster?' · '+b.roaster:''),b.id)));
+  if(e.beanId&&!beans.some(b=>b.id===e.beanId)) LE.bean.append(new Option((e.beanName||'Removed bean')+' (removed)',e.beanId));
+  LE.bean.value=e.beanId||'';
+  if(e.recipe&&![...LE.recipe.options].some(o=>o.value===e.recipe)) LE.recipe.append(new Option(e.recipe,e.recipe));
+  LE.recipe.value=e.recipe||'Brewman';
+  LE.grind.value=e.grind||''; LE.dose.value=e.dose; LE.water.value=e.water; LE.temp.value=e.temp;
+  LE.time.value=fmt(e.time); LE.taste.value=e.taste||''; LE.rating.value=String(e.rating||0); LE.notes.value=e.notes||'';
+  LE.form.hidden=false; renderLog();
+  try{LE.form.scrollIntoView({block:'nearest'});}catch(err){}
+}
+function closeLogEdit(){ editLogId=null; LE.form.hidden=true; renderLog(); }
+$('leCancel').addEventListener('click',closeLogEdit);
+LE.form.addEventListener('submit',ev=>{
+  ev.preventDefault();
+  const e=log.find(x=>x.id===editLogId); if(!e){closeLogEdit();return;}
+  const tm=parseTime(LE.time.value);
+  if(tm===null||tm<10){LE.err.textContent='Enter the brew time as minutes:seconds, e.g. 2:45.';LE.time.focus();return;}
+  const num=(v,lo,hi,d)=>{v=parseFloat(v);return isFinite(v)?Math.min(hi,Math.max(lo,v)):d;};
+  const b=beans.find(x=>x.id===LE.bean.value)||null, beanChanged=LE.bean.value!==(e.beanId||'');
+  e.beanId=LE.bean.value;
+  if(b){ e.beanName=b.name; const d=daysBetween(b.roast,e.ts); if(d!==null||beanChanged) e.day=d; }
+  else if(!e.beanId){ e.beanName=''; e.day=null; }
+  e.recipe=LE.recipe.value; e.grind=LE.grind.value.trim();
+  e.dose=num(LE.dose.value,5,40,e.dose); e.water=Math.round(num(LE.water.value,50,600,e.water)); e.temp=num(LE.temp.value,80,100,e.temp);
+  e.time=tm; e.taste=LE.taste.value; e.rating=+LE.rating.value; e.notes=LE.notes.value.slice(0,400);
+  // The newest brew of a bean sets that bean's remembered grind.
+  if(b&&e.grind&&log.find(x=>x.beanId===b.id)===e){ b.grind=e.grind; if(S.beanId===b.id&&idle()){ S.grind=e.grind; fillForm(); } }
+  if(e===current){ renderStars(e.rating); $('notes').value=e.notes; $('resTime').textContent=fmt(e.time); }
+  save(); closeLogEdit(); renderAllStatic();
+});
+LE.del.addEventListener('click',()=>{
+  if(!leDelArmed){leDelArmed=true;LE.del.textContent='Tap again to delete';return;}
+  const e=log.find(x=>x.id===editLogId);
+  log=log.filter(x=>x.id!==editLogId);
+  if(e&&e===current){current=null;$('result').classList.remove('show');}
+  save(); closeLogEdit(); renderBeans();
+});
+function ensureIds(){ log.forEach(e=>{ if(!e.id) e.id=uid(); }); }
 $('clearLog').addEventListener('click',()=>{ if(log.length) $('clearConfirm').hidden=false; });
 $('clearNo').addEventListener('click',()=>{$('clearConfirm').hidden=true;});
-$('clearYes').addEventListener('click',()=>{log=[];current=null;save();renderLog();renderBeans();$('clearConfirm').hidden=true;});
+$('clearYes').addEventListener('click',()=>{editLogId=null;LE.form.hidden=true;log=[];current=null;save();renderLog();renderBeans();$('clearConfirm').hidden=true;});
 
 /* ---------- backup ---------- */
 const bkMsg=t=>{$('bkMsg').textContent=t;};
@@ -628,7 +710,7 @@ $('bkFile').addEventListener('change',async e=>{const f=e.target.files[0]; if(!f
 $('bkNo').addEventListener('click',()=>{pending=null;$('bkConfirm').hidden=true;});
 $('bkYes').addEventListener('click',()=>{
   if(!pending||!idle()) {bkMsg('Finish or reset the current brew first.');return;}
-  load(pending); save(); pending=null; $('bkConfirm').hidden=true; current=null;
+  load(pending); ensureIds(); save(); pending=null; $('bkConfirm').hidden=true; current=null;
   R=build(); fillForm(); renderAllStatic(); renderLog(); render(0);
   bkMsg('Restored '+log.length+' brews and '+beans.length+' beans.');
 });
@@ -671,7 +753,7 @@ function finish(){
   acc=elapsed(); state='done'; unlockScreen(); SND.done();
   const b=curBean(), d=new Date();
   if(b&&S.grind) b.grind=S.grind;
-  current={date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),ts:d.getTime(),recipe:R.rc.short,
+  current={id:uid(),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),ts:d.getTime(),recipe:R.rc.short,
     beanId:b?b.id:'',beanName:b?b.name:'',day:daysOff(b),dose:S.dose,water:R.W,rate:S.rate,temp:S.temp,grind:S.grind,
     time:Math.round(acc),taste:'',rating:0,notes:''};
   log.unshift(current); save(); renderLog(); renderBeans(); showResult(current.time);
@@ -788,7 +870,7 @@ function frame(){
   requestAnimationFrame(frame);
 }
 
-fillForm(); renderAllStatic(); renderLog(); render(0); updateButtons(); requestAnimationFrame(frame);
+ensureIds(); fillForm(); renderAllStatic(); renderLog(); render(0); updateButtons(); requestAnimationFrame(frame);
 
 /* Offline support when installed from your own hosting (skipped inside Claude). */
 if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost') && !/claude/i.test(location.hostname)){
