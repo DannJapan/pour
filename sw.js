@@ -1,5 +1,5 @@
 // Pour-Over Practice offline cache. Bump VERSION when you change index.html so phones pick up the update.
-const VERSION = 'pour-v7';
+const VERSION = 'pour-v8';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
 
 self.addEventListener('install', e => {

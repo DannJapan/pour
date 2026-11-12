@@ -70,6 +70,8 @@ h3{font-family:var(--display);font-weight:500;font-size:.74rem;letter-spacing:.1
 .rpick button{flex:1;padding:10px 4px;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;border-radius:0;background:transparent;color:var(--muted);font-size:.78rem;letter-spacing:.16em}
 .rpick button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--ink)}
 .rpick button:disabled{opacity:.45;cursor:default}
+.roastpick{margin-top:-6px}
+.roastpick button{font-size:.66rem;letter-spacing:.12em;padding:8px 2px}
 .beanbar{display:flex;gap:10px;align-items:center}
 .beanbar select{flex:1;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -223,8 +225,13 @@ button.danger{color:var(--warn);border-color:var(--warn)}
     <div class="brand"><h1>Pour</h1><span>Brew companion</span></div>
     <div class="rpick" id="rpick" role="group" aria-label="Recipe">
       <button type="button" data-r="brewman">Brewman</button>
+      <button type="button" data-r="card">Card</button>
       <button type="button" data-r="decaf">Decaf</button>
       <button type="button" data-r="starter">Starter</button>
+    </div>
+    <div class="rpick roastpick" id="roastPick" role="group" aria-label="Roast" hidden>
+      <button type="button" data-roast="light">Light roast · 13 g · 93°C</button>
+      <button type="button" data-roast="dark">Dark roast · 14 g · 85°C</button>
     </div>
     <div class="beanbar">
       <label for="beanSel" class="sr">Bean</label>
@@ -313,6 +320,7 @@ button.danger{color:var(--warn);border-color:var(--warn)}
         <div class="field wide"><label for="recipe">Recipe</label>
           <select id="recipe">
             <option value="brewman">Brewman Tokyo Ginza · 15 g / 240 g · 4 pours</option>
+            <option value="card">Pour Over card · 13–14 g / 210 g · 4 pours</option>
             <option value="decaf">Decaf · 15 g / 240 g · 90°C · long bloom</option>
             <option value="starter">Starter · 12 g / 200 g · 3 pours</option>
           </select>
@@ -341,7 +349,7 @@ button.danger{color:var(--warn);border-color:var(--warn)}
       <h3>Edit brew</h3>
       <div class="field"><label for="leBean">Bean</label><select id="leBean"></select></div>
       <div class="grid2">
-        <div class="field"><label for="leRecipe">Recipe</label><select id="leRecipe"><option value="Brewman">Brewman</option><option value="Decaf">Decaf</option><option value="Starter">Starter</option></select></div>
+        <div class="field"><label for="leRecipe">Recipe</label><select id="leRecipe"><option value="Brewman">Brewman</option><option value="Card · light">Card · light</option><option value="Card · dark">Card · dark</option><option value="Decaf">Decaf</option><option value="Starter">Starter</option></select></div>
         <div class="field"><label for="leGrind">C3S clicks</label><input type="text" id="leGrind" maxlength="12"></div>
         <div class="field"><label for="leDose">Coffee (g)</label><input type="number" id="leDose" min="5" max="40" step="0.5" inputmode="decimal"></div>
         <div class="field"><label for="leWater">Water (g)</label><input type="number" id="leWater" min="50" max="600" step="1" inputmode="numeric"></div>
@@ -414,6 +422,14 @@ const RECIPES={
       {at:100,frac:180/240,name:'Main stage',     wait:'Let it settle', tip:'Circular pour, a little gentler than usual. Decaf extracts fast.'},
       {at:140,frac:1,      name:'Adjust strength',wait:'',              tip:'Gently pour to level the grounds.'}],
     swirl:false, win:[170,200], finerBelow:140, coarserAbove:215},
+  card:{label:'Pour Over card',short:'Card',dose:13,ratio:16.1538,temp:93,
+    variants:{light:{label:'light',dose:13,ratio:16.1538,temp:93},dark:{label:'dark',dose:14,ratio:15,temp:85}},
+    pours:[
+      {at:0,  frac:40/210, name:'Bloom',   wait:'Bloom',         tip:'Pour 40 g to bloom. Wet all the grounds evenly.'},
+      {at:40, frac:90/210, name:'2nd pour',wait:'Let it settle', tip:'Pour up to 90 g total in slow circles.'},
+      {at:80, frac:150/210,name:'3rd pour',wait:'Let it settle', tip:'Pour up to 150 g total.'},
+      {at:120,frac:1,      name:'4th pour',wait:'',              tip:'Pour up to 210 g total, gently levelling the bed.'}],
+    swirl:false, win:[150,180], finerBelow:140, coarserAbove:195},
   starter:{label:'Starter (1:16.7)',short:'Starter',dose:12,ratio:16.7,temp:93,
     pours:[
       {at:0, frac:0.2,name:'Bloom pour',wait:'Bloom',tip:'Wet every bit of the grounds, then a gentle swirl.'},
@@ -421,7 +437,7 @@ const RECIPES={
       {at:75,frac:1,  name:'Pour 3',    wait:'',     tip:'Same slow circles up to the final weight.'}],
     swirl:true, win:[150,180], finerBelow:150, coarserAbove:210}
 };
-const defaults={recipe:'brewman',dose:15,ratio:16,rate:3.5,temp:91,grind:'',sound:true,leadIn:true,beanId:''};
+const defaults={roast:'light',recipe:'brewman',dose:15,ratio:16,rate:3.5,temp:91,grind:'',sound:true,leadIn:true,beanId:''};
 
 let S=Object.assign({},defaults), log=[], beans=[];
 let state='idle', acc=0, t0=0, leadT0=0, lastIdx=-1, tickKey='', leadTick=0, wake=null, current=null;
@@ -484,7 +500,7 @@ const idle=()=>state==='idle'||state==='done';
 /* ---------- static render ---------- */
 function renderChips(){
   const ch=$('chips'); ch.textContent='';
-  const items=[[R.rc.label,''],[S.dose,' g coffee'],[R.W,' g water'],['1:'+(+S.ratio).toFixed(1).replace(/\.0$/,''),''],[S.temp,'°C'],[S.rate,' g/s']];
+  const items=[[R.rc.label+(R.rc.variants?' · '+((R.rc.variants[S.roast]||R.rc.variants.light).label)+' roast':''),''],[S.dose,' g coffee'],[R.W,' g water'],['1:'+(+S.ratio).toFixed(1).replace(/\.0$/,''),''],[S.temp,'°C'],[S.rate,' g/s']];
   if(S.grind) items.push([S.grind,' clicks']);
   items.forEach(([b,t])=>{const s=el('span','chip');s.append(el('b',null,b),t);ch.append(s);});
 }
@@ -509,7 +525,11 @@ function renderTimeline(){
     st.append(li);
   });
 }
-function renderPick(){document.querySelectorAll('#rpick button').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.r===S.recipe?'true':'false');b.disabled=!idle();});}
+function renderPick(){
+  document.querySelectorAll('#rpick button').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.r===S.recipe?'true':'false');b.disabled=!idle();});
+  const rc=RECIPES[S.recipe]; $('roastPick').hidden=!(rc&&rc.variants);
+  document.querySelectorAll('#roastPick button').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.roast===S.roast?'true':'false');b.disabled=!idle();});
+}
 function renderBeanBar(){
   const sel=$('beanSel'); sel.textContent='';
   sel.append(new Option(beans.length?'No bean selected':'No beans yet · add one below',''));
@@ -551,10 +571,12 @@ function readForm(){
 function pickRecipe(key){
   const rc=RECIPES[key]; if(!rc) return;
   S.recipe=key; S.dose=rc.dose; S.ratio=rc.ratio; S.temp=rc.temp;
+  if(rc.variants){ const v=rc.variants[S.roast]||rc.variants.light; S.dose=v.dose; S.ratio=v.ratio; S.temp=v.temp; }
   if(rc.grind&&!curBean()) S.grind=rc.grind;
   fillForm(); readForm();
 }
 $('recipe').addEventListener('change',()=>pickRecipe($('recipe').value));
+document.querySelectorAll('#roastPick button').forEach(b=>b.addEventListener('click',()=>{ if(!idle()) return; if(state==='done') reset(); S.roast=b.dataset.roast; pickRecipe(S.recipe); updateButtons(); }));
 document.querySelectorAll('#rpick button').forEach(b=>b.addEventListener('click',()=>{ if(!idle()) return; if(state==='done') reset(); pickRecipe(b.dataset.r); updateButtons(); }));
 $('beanSel').addEventListener('change',()=>{
   S.beanId=$('beanSel').value; const b=curBean();
@@ -753,7 +775,7 @@ function finish(){
   acc=elapsed(); state='done'; unlockScreen(); SND.done();
   const b=curBean(), d=new Date();
   if(b&&S.grind) b.grind=S.grind;
-  current={id:uid(),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),ts:d.getTime(),recipe:R.rc.short,
+  current={id:uid(),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),ts:d.getTime(),recipe:R.rc.short+(R.rc.variants?' · '+((R.rc.variants[S.roast]||R.rc.variants.light).label):''),
     beanId:b?b.id:'',beanName:b?b.name:'',day:daysOff(b),dose:S.dose,water:R.W,rate:S.rate,temp:S.temp,grind:S.grind,
     time:Math.round(acc),taste:'',rating:0,notes:''};
   log.unshift(current); save(); renderLog(); renderBeans(); showResult(current.time);
